@@ -1,0 +1,87 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Apr 17 08:32:11 2023
+
+@author: lenovo
+"""
+
+#!/usr/bin/env python
+import sys
+import rospy
+from std_msgs.msg import Float64MultiArray
+from sensor_msgs.msg import JointState
+import random
+import numpy as np
+from qt_motors_controller.srv import *
+from qt_motors_command.srv import *
+from time import sleep
+
+
+
+# callback function to receive joint state messages
+def joint_states_callback(msg):
+    currentPosition={}
+    # print the position of each joint
+    for i, joint_name in enumerate(msg.name):
+        currentPosition[joint_name]=msg.position[i]
+        rospy.loginfo("%s: %.2f" % (joint_name, msg.position[i]))
+    return currentPosition
+# function to send motor commands
+def send_motor_commands(head_yaw, head_pitch, r_shoulder_pitch, r_shoulder_roll, l_shoulder_pitch, l_shoulder_roll):
+    # wait for service
+    rospy.wait_for_service('/qt_robot/motors/setVelocity')
+    set_velocity = rospy.ServiceProxy('/qt_robot/motors/setVelocity', SetVelocity)
+
+    # set the velocity of the motors' movement
+    set_velocity(['left_arm', 'right_arm', 'HeadPitch'],2)
+
+    # define messages for the head and arm motors
+    head_msg = Float64MultiArray()
+    arm_msg_r = Float64MultiArray()
+    arm_msg_l = Float64MultiArray()
+
+    # set the values for the head and arm messages
+    head_msg.data = [head_yaw, head_pitch]
+    arm_msg_r.data = [r_shoulder_pitch, r_shoulder_roll, -20]
+    arm_msg_l.data = [l_shoulder_pitch, l_shoulder_roll, -20]
+
+    # publish the head and arm messages
+    head_pub.publish(head_msg)
+    arm_pub_r.publish(arm_msg_r)
+    arm_pub_l.publish(arm_msg_l)
+
+    # sleep for a short time to make the motion more smooth
+    sleep(0.5)
+
+
+if __name__ == '__main__':
+    # initialize the node
+    rospy.init_node('qt_motors_control_and_state')
+
+    # create publishers for the head and arm motors
+    head_pub = rospy.Publisher('/qt_robot/motors/head_position/command', Float64MultiArray, queue_size=10)
+    arm_pub_r = rospy.Publisher('/qt_robot/motors/right_arm_position/command', Float64MultiArray, queue_size=10)
+    arm_pub_l = rospy.Publisher('/qt_robot/motors/left_arm_position/command', Float64MultiArray, queue_size=10)
+
+    # subscribe to the joint state topic
+    rospy.Subscriber('/qt_robot/joints/state', JointState, joint_states_callback)
+
+    # loop to send commands
+    while not rospy.is_shutdown():
+        # get the random position of different joints
+        head_yaw_ref = random.uniform(-15.0, 15.0)
+        head_pitch_ref = random.uniform(-7.0, 7.0)
+        RightShoulderPitch_ref = random.uniform(-100.0, -80.0)
+        RightShoulderRoll_ref = random.uniform(-75.0, -65.0)
+        LeftShoulderPitch_ref = random.uniform(80.0, 100.0)
+        LeftShoulderRoll_ref = random.uniform(-75.0, -65.0)
+        # creating a continuous trajectory between the random chosen position and the current position
+        head_pitch_traj = np.linspace(joint_states_callback[HeadPitch], head_pitch_ref, num=100)
+        head_yaw_traj = np.linspace(joint_states_callback[HeadYaw], head_yaw_ref, num=100)
+        RightShoulderPitch_traj= np.linspace(joint_states_callback[RightShoulderPitch],RightShoulderPitch_ref, num=100)
+        RightShoulderRoll_traj= np.linspace(joint_states_callback[RightShoulderRoll],RightShoulderRoll_ref, num=100)
+        LeftShoulderPitch_traj= np.linspace(joint_states_callback[LeftShoulderPitch],LeftShoulderPitch_ref, num=100)
+        LeftShoulderRoll_traj= np.linspace(joint_states_callback[LeftShoulderRoll],LeftShoulderRoll_ref, num=100)
+        # send motor commands
+        for i in range(100):
+            send_motor_commands(head_yaw_traj[i], head_pitch_traj[i], RightShoulderPitch_traj[i], RightShoulderRoll_traj[i], LeftShoulderPitch_traj[i], LeftShoulderRoll_traj[i])
